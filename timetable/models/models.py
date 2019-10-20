@@ -25,6 +25,7 @@ class Task:
 
 
 class Slot:
-    def __init__(self, time_start, duration):
-        self.time_start = time_start
+    def __init__(self, duration, time_start, time_end):
         self.duration = duration
+        self.time_start = time_start
+        self.time_end = time_end
