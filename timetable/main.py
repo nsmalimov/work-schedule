@@ -20,7 +20,7 @@ async def main():
         scheduler = Scheduler(pSQLWorker)
         available_slots = await scheduler.find_available_slots()
 
-        # for slot in slots print
+        # scheduler.print_slots(available_slots)
     finally:
         if not (pSQLWorker is None):
             await pSQLWorker.close()

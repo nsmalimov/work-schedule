@@ -1,5 +1,5 @@
 import asyncpg
-
+from timetable.models.models import Task
 
 # Не очень удачное название класса, скорее это DataProcessor
 class PSQLWorker:
@@ -12,7 +12,20 @@ class PSQLWorker:
 
         self.connection = conn
 
-    async def get_workers_and_tasks(self):
+    async def get_free_tasks(self):
+        res = []
+        values = await self.connection.fetch('''SELECT *
+                            FROM task WHERE worker_id is null''')
+
+
+        for i in values:
+            d = dict(i)
+            del d['id']
+            res.append(Task(**d))
+
+        return res
+
+    async def get_workers_with_tasks(self):
         # Работники должны иметь доступное время для работы и вообще сегодня работать
         # остальных не вынимаем
 
@@ -23,6 +36,7 @@ class PSQLWorker:
                      w.fully_loaded = false and
                      w.today_work = true''')
 
+        # проще? через объект
         for i in values:
             d = dict(i)
 
