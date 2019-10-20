@@ -1,6 +1,7 @@
 import asyncpg
 
 
+# Не очень удачное название класса, скорее это DataProcessor
 class PSQLWorker:
     def __init__(self):
         self.connection = None
@@ -11,15 +12,26 @@ class PSQLWorker:
 
         self.connection = conn
 
-    async def get_available_workers_and_tasks(self):
-        workers, tasks = [], []
-
-        # Работники должны иметь доступное время для работы
+    async def get_workers_and_tasks(self):
+        # Работники должны иметь доступное время для работы и вообще сегодня работать
         # остальных не вынимаем
 
-        # Таски должны быть свободными
+        res = {}
+        values = await self.connection.fetch('''SELECT *
+                    FROM task t
+                    RIGHT JOIN worker w ON t.worker_id = w.id where
+                     w.fully_loaded = false and
+                     w.today_work = true''')
 
-        return workers, tasks
+        for i in values:
+            d = dict(i)
+
+            if d['id'] in res:
+                res[d['id']].append(d)
+            else:
+                res[d['id']] = [d]
+
+        return res
 
     async def close(self):
         if self.connection is None:
@@ -31,7 +43,6 @@ class PSQLWorker:
         if self.connection is None:
             raise Exception('No connection to db')
 
-        print(worker.__dict__)
         await self.connection.execute('''
             INSERT INTO worker (full_name, work_start, work_end, fully_loaded, today_work) VALUES
             ($1, $2, $3, $4, $5)

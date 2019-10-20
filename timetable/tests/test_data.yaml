@@ -2,7 +2,7 @@
   fields:
     full_name: Пётр
     work_start: 18:00:00
-    work_end: 1:00:00
+    work_end: 2:00:00
     fully_loaded: false
     today_work: true
 
@@ -99,6 +99,13 @@
     time_start: 12:00:00
     time_end: 18:00:00
     duration: 6 hours
+
+- table: tasks
+  fields:
+    worker_id: 3
+    time_start: 16:00:00
+    time_end: 18:00:00
+    duration: 2 hours
 
 - table: tasks
   fields:
