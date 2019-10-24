@@ -102,6 +102,18 @@ class Scheduler:
 
         return slots
 
+    def raise_error_cant_take(self, task_time_mask):
+        _, time_start, time_end = self.parse_data_by_slot_mask(task_time_mask)
+        raise Exception('This time work: time_task_start: {0},'
+                        'time_task_end: {1} cant be taken to work'
+                        .format(time_start, time_end))
+
+    def raise_error_no_slot_for_task(self, task_time_mask):
+        _, time_start, time_end = self.parse_data_by_slot_mask(task_time_mask)
+        raise Exception('This time work: time_task_start: {0},'
+                        'time_task_end: {1} cant be taken to work'
+                        .format(time_start, time_end))
+
     async def get_available_free_slots(self, full_free_slots_by_workers):
         free_task_objects = await self.data_processor.get_free_tasks()
         free_tasks = self.create_time_masks_from_task_objects(free_task_objects)
@@ -122,17 +134,11 @@ class Scheduler:
             else:
                 # в базе оказались не валидные данные (ранее была ошибка алгоритма и был создан таск, ломающий логику)
                 # по хорошему надо в тестах проверить
-                _, time_start, time_end = self.parse_data_by_slot_mask(task_time_mask)
-                raise Exception('Not valid task was created early: time_task_start: {0},'
-                                'time_task_end: {1}'
-                                .format(time_start, time_end))
+                self.raise_error_no_slot_for_task(task_time_mask)
 
             # тоже валидация (в базе свободных слотов больше, чем могут взять воркеры)
             if slot_by_count[task_time_mask] < 0:
-                _, time_start, time_end = self.parse_data_by_slot_mask(task_time_mask)
-                raise Exception('This time work: time_task_start: {0},'
-                                'time_task_end: {1} cant be taken to work'
-                                .format(time_start, time_end))
+                self.raise_error_cant_take(task_time_mask)
 
         slots = []
         for slot in slot_by_count:
