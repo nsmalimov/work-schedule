@@ -1,5 +1,21 @@
+from datetime import datetime
+
 import asyncpg
+
 from timetable.models.models import Task
+
+
+# todo: move to util
+def time_to_datetime(time, is_today=True):
+    day = 1
+
+    if not (is_today):
+        day = 2
+
+    return datetime(
+        2000, 1, day,
+        hour=time.hour, minute=time.minute, second=time.second)
+
 
 # Не очень удачное название класса, скорее это DataProcessor
 class PSQLWorker:
@@ -17,9 +33,10 @@ class PSQLWorker:
         values = await self.connection.fetch('''SELECT *
                             FROM task WHERE worker_id is null''')
 
-
         for i in values:
             d = dict(i)
+
+            # удаляем для упрощения, чтобы через ** передать в функцию
             del d['id']
             res.append(Task(**d))
 
@@ -32,13 +49,31 @@ class PSQLWorker:
         res = {}
         values = await self.connection.fetch('''SELECT *
                     FROM task t
-                    RIGHT JOIN worker w ON t.worker_id = w.id where
+                    FULL JOIN worker w ON t.worker_id = w.id where
                      w.fully_loaded = false and
                      w.today_work = true''')
 
         # проще? через объект
         for i in values:
             d = dict(i)
+
+            # преобразование в datetime для упрощения
+            # todo: assert start or end exist, but another not (bad data)
+            # validate
+            if not d['time_start'] is None:
+                is_today = True
+                if d['time_start'] > d['time_end']:
+                    is_today = False
+
+                d['time_start'] = time_to_datetime(d['time_start'])
+                d['time_end'] = time_to_datetime(d['time_end'], is_today)
+
+            is_today = True
+            if d['work_start'] > d['work_end']:
+                is_today = False
+
+            d['work_start'] = time_to_datetime(d['work_start'])
+            d['work_end'] = time_to_datetime(d['work_end'], is_today)
 
             if d['id'] in res:
                 res[d['id']].append(d)
