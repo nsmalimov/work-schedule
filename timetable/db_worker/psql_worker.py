@@ -6,15 +6,28 @@ from timetable.models.models import Task
 
 
 # todo: move to util
-def time_to_datetime(time, is_today=True):
+def times_to_datetimes(time_start, time_end):
+    # преобразование в datetime для упрощения
+    # todo: assert start or end exist, but another not (bad data)
+    # validate
+
     day = 1
 
-    if not (is_today):
-        day = 2
+    if not (time_start is None):
+        if time_start > time_end:
+            day = 2
+    else:
+        return time_start, time_end
 
-    return datetime(
+    dt_start = datetime(
+        2000, 1, 1,
+        hour=time_start.hour, minute=time_start.minute, second=time_start.second)
+
+    dt_end = datetime(
         2000, 1, day,
-        hour=time.hour, minute=time.minute, second=time.second)
+        hour=time_end.hour, minute=time_end.minute, second=time_end.second)
+
+    return dt_start, dt_end
 
 
 # Не очень удачное название класса, скорее это DataProcessor
@@ -36,7 +49,7 @@ class PSQLWorker:
         for i in values:
             d = dict(i)
 
-            # удаляем для упрощения, чтобы через ** передать в функцию
+            # удаляем для упрощения, чтобы через ** передать в конструктор
             del d['id']
             res.append(Task(**d))
 
@@ -57,23 +70,8 @@ class PSQLWorker:
         for i in values:
             d = dict(i)
 
-            # преобразование в datetime для упрощения
-            # todo: assert start or end exist, but another not (bad data)
-            # validate
-            if not d['time_start'] is None:
-                is_today = True
-                if d['time_start'] > d['time_end']:
-                    is_today = False
-
-                d['time_start'] = time_to_datetime(d['time_start'])
-                d['time_end'] = time_to_datetime(d['time_end'], is_today)
-
-            is_today = True
-            if d['work_start'] > d['work_end']:
-                is_today = False
-
-            d['work_start'] = time_to_datetime(d['work_start'])
-            d['work_end'] = time_to_datetime(d['work_end'], is_today)
+            d['time_start'], d['time_end'] = times_to_datetimes(d['time_start'], d['time_end'])
+            d['work_start'], d['work_end'] = times_to_datetimes(d['work_start'], d['work_end'])
 
             if d['id'] in res:
                 res[d['id']].append(d)

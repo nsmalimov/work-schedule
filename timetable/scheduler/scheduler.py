@@ -2,6 +2,7 @@ import datetime
 from datetime import datetime
 from datetime import timedelta
 
+from timetable.db_worker.psql_worker import times_to_datetimes
 from timetable.models.models import Slot
 
 
@@ -25,12 +26,12 @@ class Scheduler:
 
                 can_be_added = True
 
-                # todo: упростить (через dict) или убирать таски "до" начала текущего времени
+                # todo: упростить (через dict) или убирать таски 'до' начала текущего времени
                 for task in worker_tasks_times:
                     # проверка, что слот времени лежит во временном отрезке взятого таска
                     if current_t_start >= task['start'] and current_t_start < task['end']:
-                       can_be_added = False
-                       break
+                        can_be_added = False
+                        break
 
                     if inner_t_start > task['start'] and inner_t_start < task['end']:
                         can_be_added = False
@@ -48,20 +49,7 @@ class Scheduler:
         return res
 
     def create_time_mask(self, t_start, t_end):
-        return '{0}-{1}'.format(t_start, t_end)
-
-    def create_time_masks_from_task_objects(self, tasks):
-        res = {}
-
-        for task in tasks:
-            key = self.create_time_mask(task.duration.seconds // 3600, task.time_start, task.time_end)
-
-            if key in res:
-                res[key] += 1
-            else:
-                res[key] = 1
-
-        return res
+        return '{0}={1}'.format(t_start, t_end)
 
     def get_full_free_slots(self, workers_and_tasks):
         res = {}
@@ -82,8 +70,8 @@ class Scheduler:
                     break
 
                 worker_tasks_times.append({
-                    "start": time_start,
-                    "end": val['time_end']
+                    'start': time_start,
+                    'end': val['time_end']
                 })
 
             full_slots_for_worker = self.full_slots_for_worker(time_work_start, time_work_end, worker_tasks_times)
@@ -91,53 +79,22 @@ class Scheduler:
             res[worker_id] = full_slots_for_worker
         return res
 
-    async def get_available_free_slots(self, full_free_slots_max4_by_workers):
-        slots = {}
+    def create_time_masks_from_task_objects(self, tasks):
+        res = {}
 
-        free_tasks_object = await self.data_processor.get_free_tasks()
-        free_tasks_time_mask = self.create_time_masks_from_task_objects(free_tasks_object)
+        for task in tasks:
+            task.time_start, task.time_end = times_to_datetimes(task.time_start, task.time_end)
 
-        slot_by_count = {}
+            key = self.create_time_mask(task.time_start, task.time_end)
 
-        for worker_id in full_free_slots_max4_by_workers:
-            for slot in full_free_slots_max4_by_workers[worker_id]:
-                if slot in slot_by_count:
-                    slot_by_count[slot] += 1
-                else:
-                    slot_by_count[slot] = 1
-
-        for slot in slot_by_count:
-            print(slot)
-
-        print()
-
-        for task in free_tasks_time_mask:
-            print(task, free_tasks_time_mask[task])
-
-        for task_time_mask in free_tasks_time_mask:
-            if task_time_mask in slot_by_count:
-                slot_by_count[task_time_mask] -= 1
+            if key in res:
+                res[key] += 1
             else:
-                # в базе оказались не валидные данные (ранее была ошибка алгоритма и был создан таск, ломающий логику)
-                # по хорошему надо в тестах проверить
-                duration, time_start, time_end = self.parse_data_by_slot_mask(task_time_mask)
-                raise Exception('Not valid task was created early: duration: {0}, time_task_start: {1},'
-                                'time_task_end: {2}'
-                                .format(duration, time_start, time_end))
+                res[key] = 1
 
-        return slots
+        return res
 
-    def parse_data_by_slot_mask(self, slot_mask):
-        slot_mask_splited = slot_mask.split('_')
-        duration = timedelta(hours=int(slot_mask_splited[0]))
-
-        time_splitted = slot_mask_splited[1].split('-')
-        time_start = datetime.strptime(time_splitted[0], '%H:%M:%S').time()
-        time_end = datetime.strptime(time_splitted[1], '%H:%M:%S').time()
-
-        return duration, time_start, time_end
-
-    def create_objects_from_time_mask(self, available_free_slots):
+    def create_time_mask_from_task_object(self, available_free_slots):
         slots = []
         for slot_mask in available_free_slots:
             duration, time_start, time_end = self.parse_data_by_slot_mask(slot_mask)
@@ -145,7 +102,68 @@ class Scheduler:
 
         return slots
 
-    def create_time_mask_from_task_object(self, available_free_slots):
+    async def get_available_free_slots(self, full_free_slots_by_workers):
+        free_task_objects = await self.data_processor.get_free_tasks()
+        free_tasks = self.create_time_masks_from_task_objects(free_task_objects)
+
+        slot_by_count = {}
+
+        for worker_id in full_free_slots_by_workers:
+            for slot in full_free_slots_by_workers[worker_id]:
+                if slot in slot_by_count:
+                    slot_by_count[slot] += 1
+                else:
+                    slot_by_count[slot] = 1
+
+        # забираем те слоты, в которые можем вставить таски
+        for task_time_mask in free_tasks:
+            if task_time_mask in slot_by_count:
+                slot_by_count[task_time_mask] -= 1
+            else:
+                # в базе оказались не валидные данные (ранее была ошибка алгоритма и был создан таск, ломающий логику)
+                # по хорошему надо в тестах проверить
+                _, time_start, time_end = self.parse_data_by_slot_mask(task_time_mask)
+                raise Exception('Not valid task was created early: time_task_start: {0},'
+                                'time_task_end: {1}'
+                                .format(time_start, time_end))
+
+            # тоже валидация (в базе свободных слотов больше, чем могут взять воркеры)
+            if slot_by_count[task_time_mask] < 0:
+                _, time_start, time_end = self.parse_data_by_slot_mask(task_time_mask)
+                raise Exception('This time work: time_task_start: {0},'
+                                'time_task_end: {1} cant be taken to work'
+                                .format(time_start, time_end))
+
+        slots = []
+        for slot in slot_by_count:
+            if slot_by_count[slot] != 0:
+                slots.append(slot)
+
+        return slots
+
+    def parse_data_by_slot_mask(self, slot_mask):
+        slot_mask_splited = slot_mask.split('=')
+
+        t_mask = '%H:%M:%S'
+        dt_mask = '%Y-%m-%d ' + t_mask
+
+        dt_start = datetime.strptime(slot_mask_splited[0], dt_mask)
+        dt_end = datetime.strptime(slot_mask_splited[1], dt_mask)
+
+        time_start = datetime.strptime(str(dt_start).split(' ')[1], t_mask).time()
+        time_end = datetime.strptime(str(dt_end).split(' ')[1], t_mask).time()
+
+        duration = dt_end - dt_start
+
+        # case '2000-01-01 03:00:00=2000-01-02 03:00:00'
+        if 'day' in str(duration):
+            duration = 24
+        else:
+            duration = duration.seconds // 3600
+
+        return duration, time_start, time_end
+
+    def create_objects_from_time_mask(self, available_free_slots):
         slots = []
         for slot_mask in available_free_slots:
             duration, time_start, time_end = self.parse_data_by_slot_mask(slot_mask)
@@ -162,13 +180,13 @@ class Scheduler:
         # для существующих воркеров (с учётом взятых тасков)
         full_free_slots_by_workers = self.get_full_free_slots(workers_with_tasks)
 
-        # удаляем не доступные слоты с учётом "не взятых" тасков
+        # удаляем не доступные слоты с учётом 'не взятых' тасков
         available_free_slots = await self.get_available_free_slots(full_free_slots_by_workers)
 
         # объекты из маски времени (help - операция)
-        # slots = self.create_objects_from_time_mask(available_free_slots)
+        slots = self.create_objects_from_time_mask(available_free_slots)
 
-        return []
+        return slots
 
     def print_slots(self, slots):
         slots.sort(key=lambda x: x.time_start, reverse=True)
@@ -176,6 +194,6 @@ class Scheduler:
         for slot in slots:
             time_start = slot.time_start
             time_end = slot.time_end
-            duration = slot.duration.seconds // 3600
+            duration = slot.duration
 
             print('{0} hours, from: {1} to {2}'.format(duration, time_start, time_end))
