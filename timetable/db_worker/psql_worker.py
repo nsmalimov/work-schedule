@@ -1,7 +1,7 @@
+import json
 from datetime import datetime
 
 import asyncpg
-
 from timetable.models.models import Task
 
 
@@ -29,7 +29,6 @@ def times_to_datetimes(time_start, time_end):
 
     return dt_start, dt_end
 
-
 # Не очень удачное название класса, скорее это DataProcessor
 class PSQLWorker:
     def __init__(self):
@@ -40,6 +39,26 @@ class PSQLWorker:
                                      database=database, host=host)
 
         self.connection = conn
+
+    async def get_workers(self):
+        values = await self.connection.fetch('''SELECT *
+                            FROM worker''')
+
+        # todo: средствами либы?
+        for i in range(len(values)):
+            values[i] = dict(values[i])
+
+        return values
+
+    async def get_tasks(self):
+        values = await self.connection.fetch('''SELECT *
+                            FROM task''')
+
+        # todo: средствами либы?
+        for i in range(len(values)):
+            values[i] = dict(values[i])
+
+        return values
 
     async def get_free_tasks(self):
         res = []
